@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Steganography Tool</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; height: 100%; overflow: hidden;
+      font-family: Arial, sans-serif; background: #000;
+    }
+    #container {
+      display: flex; height: 100%; width: 100%;
+    }
+    #imageArea {
+      position: relative; flex: 1;
+      background-image: radial-gradient(circle, #f4ff7d, #fbc25f);
+    }
+    #preview {
+      width: 100%; height: 100%;
+      object-fit: contain; position: absolute; top: 0; left: 0; z-index: 1;
+    }
+    #overlayCanvas {
+      position: absolute; top: 0; left: 0; z-index: 2;
+      pointer-events: none;
+    }
+    #canvas { display: none; }
+
+    #controlPanel {
+      width: 320px; background-image: radial-gradient(#4a4737);
+      color: #fff; padding: 20px; overflow-y: auto; z-index: 3;
+    }
+    h3 { margin-top: 0; }
+    textarea, input, select {
+      width: 100%; margin-top: 10px; padding: 8px;
+      font-size: 14px; border: 1px solid #ddd; border-radius: 4px;
+    }
+    button {
+      width: 100%; margin-top: 10px; padding: 10px;
+      font-size: 14px; background: #444; color: #fffc92;
+      border: none; border-radius: 4px; cursor: pointer;
+      box-shadow: 0 0 5px #fffa51, 0 0 0.1px #f4f05c;
+      text-shadow: 0 0 0px #fff94e, 0 0 1px #f7f13d;
+      transition: all 0.3s ease;
+    }
+    button:hover {
+      background-image: linear-gradient(to right, #bcbe40, #7d453f);
+      box-shadow: 0 0 15px #fff700, 0 0 25px #fff700;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="imageArea">
+      <img id="preview" alt="Image preview" />
+      <canvas id="canvas"></canvas>
+      <canvas id="overlayCanvas"></canvas>
+    </div>
+
+    <div id="controlPanel">
+      <h3>🖼️ Upload Image</h3>
+      <input type="file" id="imageInput" accept="image/*" />
+
+      <h3>🎨 Text Color</h3>
+      <input type="color" id="colorPicker" value="#00ff00" />
+
+      <h3>📝 Hide Message</h3>
+      <textarea id="messageInput" placeholder="Enter secret message..."></textarea>
+      <textarea id="positionInput" placeholder="Auto-filled positions..."></textarea>
+      <button onclick="hideMessage()">Hide Message</button>
+      <button onclick="downloadImage()">Download Image</button>
+
+      <hr />
+
+      <h3>🔍 Reveal Message</h3>
+      <textarea id="revealPositionInput" placeholder="Enter same positions..."></textarea>
+      <button onclick="revealMessage()">Reveal</button>
+    </div>
+  </div>
+
+  <script>
+    const imageInput = document.getElementById("imageInput");
+    const canvas = document.getElementById("canvas");
+    const overlayCanvas = document.getElementById("overlayCanvas");
+    const ctx = canvas.getContext("2d");
+    const overlayCtx = overlayCanvas.getContext("2d");
+    const preview = document.getElementById("preview");
+
+    const messageInput = document.getElementById("messageInput");
+    const positionInput = document.getElementById("positionInput");
+    const revealPositionInput = document.getElementById("revealPositionInput");
+    const colorPicker = document.getElementById("colorPicker");
+
+    let imageData;
+
+    imageInput.addEventListener("change", function () {
+      messageInput.value = "";
+      positionInput.value = "";
+      revealPositionInput.value = "";
+      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+      const file = imageInput.files[0];
+      const reader = new FileReader();
+
+      reader.onload = function (event) {
+        const img = new Image();
+        img.onload = function () {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          overlayCanvas.width = img.width;
+          overlayCanvas.height = img.height;
+
+          ctx.drawImage(img, 0, 0);
+          imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          preview.src = event.target.result;
+
+          preview.onload = () => {
+            overlayCanvas.style.width = preview.offsetWidth + "px";
+            overlayCanvas.style.height = preview.offsetHeight + "px";
+          };
+        };
+        img.src = event.target.result;
+      };
+
+      reader.readAsDataURL(file);
+    });
+
+    function parsePositions(text) {
+      return text.trim().split(";").map(p => {
+        const [x, y] = p.split(",").map(Number);
+        return { x, y };
+      });
+    }
+
+    function generatePositions(msg) {
+      const positions = [];
+      const padding = 10;
+      const startX = 20;
+      const startY = 40;
+      let x = startX;
+      let y = startY;
+      const spacing = 20;
+
+      for (let i = 0; i < msg.length; i++) {
+        if (x > canvas.width - padding) {
+          x = startX;
+          y += spacing;
+        }
+        if (y > canvas.height - padding) break;
+        positions.push(`${x},${y}`);
+        x += spacing;
+      }
+
+      positionInput.value = positions.join(";");
+      revealPositionInput.value = positionInput.value;
+    }
+
+    messageInput.addEventListener("input", () => {
+      generatePositions(messageInput.value);
+    });
+
+    function hideMessage() {
+      const msg = messageInput.value;
+      const positions = parsePositions(positionInput.value);
+
+      if (msg.length !== positions.length) {
+        alert("Character count must match number of positions!");
+        return;
+      }
+
+      const data = imageData.data;
+      const width = canvas.width;
+
+      for (let i = 0; i < msg.length; i++) {
+        const code = msg.charCodeAt(i);
+        const { x, y } = positions[i];
+        const index = (y * width + x) * 4;
+        data[index] = code;
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      alert("Message hidden!");
+    }
+
+    function revealMessage() {
+      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+      const positions = parsePositions(revealPositionInput.value);
+      const width = canvas.width;
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      const selectedColor = colorPicker.value;
+
+      const originalWidth = canvas.width;
+      const originalHeight = canvas.height;
+      const displayWidth = overlayCanvas.clientWidth;
+      const displayHeight = overlayCanvas.clientHeight;
+
+      const scaleX = displayWidth / originalWidth;
+      const scaleY = displayHeight / originalHeight;
+
+      overlayCtx.font = `${16 * scaleX}px monospace`;
+      overlayCtx.fillStyle = selectedColor;
+      overlayCtx.textBaseline = "top";
+
+      for (let i = 0; i < positions.length; i++) {
+        const { x, y } = positions[i];
+        const index = (y * width + x) * 4;
+        const code = data[index];
+        const char = String.fromCharCode(code);
+        const drawX = x * scaleX;
+        const drawY = y * scaleY;
+
+        overlayCtx.fillText(char, drawX, drawY);
+      }
+    }
+
+    function downloadImage() {
+      const link = document.createElement("a");
+      link.download = "hidden-message-image.png";
+      link.href = canvas.toDataURL();
+      link.click();
+    }
+  </script>
+</body>
+</html>
